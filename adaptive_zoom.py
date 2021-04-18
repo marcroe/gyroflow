@@ -130,6 +130,7 @@ class AdaptiveZoom:
                 plt.show()
             fovValues = fovSmooth
         elif smoothingFocus < 0: #disabled
+            print("Autocrop disabled")
             maxF = np.max(fovValues)
             fovValues = np.repeat(maxF, fovValues.size )
 
