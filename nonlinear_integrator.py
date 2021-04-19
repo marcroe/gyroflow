@@ -72,7 +72,7 @@ class NonLinIntegrator(GyroIntegrator):
         camPtsExt = np.expand_dims(self.camPts[:,0:2], axis=0) #add extra dimension so opencv accepts points
         distortedCam = cv2.fisheye.distortPoints(camPtsExt, self.K, self.D)
         distortedCam = distortedCam[0,:,:] #remove extra
-        distortedCam = distortedCam - np.array([self.K[0][2], self.K[1][2]])# how far off center?
+        distortedCam = distortedCam - np.array([self.K[0][2], self.K[1][2]])
         distortedCam = np.abs(distortedCam)
         #print(distortedCam)
 
@@ -109,7 +109,7 @@ class NonLinIntegrator(GyroIntegrator):
         #plt.plot(distorted_points[:,0], distorted_points[:,1], 'bo')
         #plt.show()
 
-    def getSmoothedQuat(self, virtualVal, phyVal, smooth):
+    def getSmoothedQuat(self, virtualVal, phyVal, smooth, distScaling = 0.5, beta = 4.0):
         lookahead = quat.slerp(virtualVal, phyVal, [smooth])[0]
         q = quat.rot_between(virtualVal, lookahead)
         q = q.flatten()
@@ -119,8 +119,8 @@ class NonLinIntegrator(GyroIntegrator):
         #                    [0.0000000,  0.9396926,  0.3420202],
         #                    [0.0000000, -0.3420202,  0.9396926 ] ])
         rotated_pts =  np.matmul(self.camPts, R)
-        rotated_pts[:,0] =  rotated_pts[:,0] #/ rotated_pts[:,2]
-        rotated_pts[:,1] =  rotated_pts[:,1] #/ rotated_pts[:,2]
+        #rotated_pts[:,0] =  rotated_pts[:,0] #/ rotated_pts[:,2]
+        #rotated_pts[:,1] =  rotated_pts[:,1] #/ rotated_pts[:,2]
         rotated_ptsExp = np.expand_dims(rotated_pts[:,0:2], axis=0) #add extra dimension so opencv accepts points
         distorted_points = cv2.fisheye.distortPoints(rotated_ptsExp, self.K, self.D)
         distorted_points = distorted_points[0,:,:] #remove extra dimension
@@ -129,6 +129,10 @@ class NonLinIntegrator(GyroIntegrator):
         dist = np.max(distorted_pointsComp, axis=0) - np.array([self.K[0][2], self.K[1][2]])
         maxDist = np.max(dist)
         maxDist = np.max((maxDist,0))
+        scaledDist = distScaling * (maxDist / np.max(self.K[0:2,2]))
+        scaledDist = np.min((scaledDist,1.0))
+        scaledDist = np.power(scaledDist, 1.0+beta)
+
         self.dbg = self.dbg + 1
         if self.dbg < 0 and ((self.dbg % 30) == 0):
             print(self.dbg)
@@ -141,8 +145,8 @@ class NonLinIntegrator(GyroIntegrator):
             plt.plot(rotated_pts[:,0], rotated_pts[:,1], 'ro')
             plt.show()
 
-        remSmooth = np.min([ (1 - smooth), (1 - smooth) * maxDist/self.K[0][2]])
-        totSmooth = smooth+remSmooth
+        remSmooth = (1 - smooth) * scaledDist
+        totSmooth = smooth + remSmooth
         #print(totSmooth)
         return quat.slerp(virtualVal, phyVal, [totSmooth])[0]
 
