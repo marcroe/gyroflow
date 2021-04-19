@@ -54,6 +54,21 @@ class StabTestCase(BBLStabilizer):
 if __name__ == "__main__":
 
     #test case
+    stab = StabTestCase('/home/mroe/fpv_local/wil/tarsier/LOOP0118.mp4',
+        '/home/mroe/gyroflow/camera_presets/Caddx/Caddx_Tarsier_4K_F_2_8_2160p_16by9.json',
+        '/home/mroe/fpv_local/wil/tarsier/btfl_001.bbl.csv', fov_scale=1.5, cam_angle_degrees=10.0,
+                                         use_csv=True, gyro_lpf_cutoff = -1, logtype='')
+    stab.set_initial_offset(5.3)
+    stab.set_rough_search(10.0)
+    #stab.auto_sync_stab(0.24, 870, 2100, 120, debug_plots=True)
+    #stab.manual_sync_correction(5.4744, 5.6012, smooth=0.24)
+    stab.manual_sync_correctionCLI(5.27160, 5.70040, 390, 4980, 90, 0.24)
+    stab.renderfile(151, 170, outpath = "/home/mroe/fpv_local/wil/tarsier/LOOP0118_stab-2.mp4", out_size = (3840,2160), split_screen = False,
+                   bitrate_mbits = 20, display_preview = True, scale=1, vcodec = "libx264", vprofile="high", pix_fmt = "",
+                   debug_text = True, custom_ffmpeg = "", zoom=1.0, smoothingFocus=1)
+    exit()
+
+    #test case
     stab = StabTestCase('/home/mroe/fpv_local/walchwil/tarsier/LOOP0095.mp4',
         '/home/mroe/gyroflow/camera_presets/Caddx/Caddx_Tarsier_4K_F_2_8_2160p_16by9.json',
         '/home/mroe/fpv_local/walchwil/tarsier/btfl_002.bbl.csv', fov_scale=1.5, cam_angle_degrees=10.0,
