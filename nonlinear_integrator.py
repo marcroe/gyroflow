@@ -109,9 +109,9 @@ class NonLinIntegrator(GyroIntegrator):
         #plt.plot(distorted_points[:,0], distorted_points[:,1], 'bo')
         #plt.show()
 
-    def getSmoothedQuat(self, virtualVal, phyVal, smooth, distScaling = 0.5, beta = 4.0):
-        lookahead = quat.slerp(virtualVal, phyVal, [smooth])[0]
-        q = quat.rot_between(virtualVal, lookahead)
+    def getSmoothedQuat(self, virtualVal, phyVal, smooth, tradeoff = 0.9, beta = 2.0, maxOvershoot = 0.5):
+        #lookahead = quat.slerp(virtualVal, phyVal, [smooth])[0]
+        q = quat.rot_between(virtualVal, phyVal) #lookahead)
         q = q.flatten()
         #R = Rotation([0.7071068,0,0,0.7071068]).as_matrix()
         R = Rotation([-q[1],-q[2],q[3],-q[0]]).as_matrix() #inverse rotation
@@ -122,21 +122,23 @@ class NonLinIntegrator(GyroIntegrator):
         #rotated_pts[:,0] =  rotated_pts[:,0] #/ rotated_pts[:,2]
         #rotated_pts[:,1] =  rotated_pts[:,1] #/ rotated_pts[:,2]
         rotated_ptsExp = np.expand_dims(rotated_pts[:,0:2], axis=0) #add extra dimension so opencv accepts points
-        distorted_points = cv2.fisheye.distortPoints(rotated_ptsExp, self.K, self.D)
+        self.K_tradeoff = np.copy(self.K)
+        self.K_tradeoff[0][0] = self.K_tradeoff[0][0] * tradeoff
+        self.K_tradeoff[1][1] = self.K_tradeoff[1][1] * tradeoff
+        distorted_points = cv2.fisheye.distortPoints(rotated_ptsExp, self.K_tradeoff, self.D)
         distorted_points = distorted_points[0,:,:] #remove extra dimension
         distorted_pointsComp = distorted_points - np.array([self.K[0][2], self.K[1][2]])# how far off center?
         distorted_pointsComp = np.abs(distorted_pointsComp)
-        dist = np.max(distorted_pointsComp, axis=0) - np.array([self.K[0][2], self.K[1][2]])
+        dist = np.max(distorted_pointsComp, axis=0) - np.array([self.K[0][2], self.K[1][2]]) # overshoot
         maxDist = np.max(dist)
         maxDist = np.max((maxDist,0))
-        scaledDist = distScaling * (maxDist / np.max(self.K[0:2,2]))
+        scaledDist = maxDist / ( np.max(self.K[0,2]) * maxOvershoot)
         scaledDist = np.min((scaledDist,1.0))
         scaledDist = np.power(scaledDist, 1.0+beta)
 
         self.dbg = self.dbg + 1
-        if self.dbg < 0 and ((self.dbg % 30) == 0):
+        if self.dbg > 2500000000 and ((self.dbg % 100) == 0):
             print(self.dbg)
-            print(q)
             print(maxDist)
             plt.plot(distorted_pointsComp[:,0], distorted_pointsComp[:,1], 'ro')
             plt.plot(self.bounderyPts[:,0], self.bounderyPts[:,1], 'bo')
@@ -147,8 +149,8 @@ class NonLinIntegrator(GyroIntegrator):
 
         remSmooth = (1 - smooth) * scaledDist
         totSmooth = smooth + remSmooth
-        #print(totSmooth)
-        return quat.slerp(virtualVal, phyVal, [totSmooth])[0]
+
+        return quat.slerp(virtualVal, phyVal, [totSmooth])[0], totSmooth
 
     def get_smoothed_orientation(self, smooth = 0.94):
         # https://en.wikipedia.org/wiki/Exponential_smoothing
@@ -159,16 +161,22 @@ class NonLinIntegrator(GyroIntegrator):
             alpha = 1 - np.exp(-(1 / self.gyro_sample_rate) /smooth)
 
         smoothed_orientation = np.zeros(self.orientation_list.shape)
+        fCoefArr = np.zeros(self.orientation_list.shape)
 
         value = self.orientation_list[0,:]
+
 
         #print(self.orientation_list)
         #print(self.orientation_list.shape)
         #exit()
 
         for i in range(self.num_data_points):
-            value = self.getSmoothedQuat(value, self.orientation_list[i,:], alpha)
+            value, fCoef = self.getSmoothedQuat(value, self.orientation_list[i,:], alpha)
+            fCoefArr[i] = fCoef
             smoothed_orientation[i] = value
+
+        plt.plot(fCoefArr)
+        plt.show()
 
         # reverse pass
         smoothed_orientation2 = np.zeros(self.orientation_list.shape)
@@ -176,7 +184,7 @@ class NonLinIntegrator(GyroIntegrator):
         value2 = smoothed_orientation[-1,:]
 
         for i in range(self.num_data_points-1, -1, -1):
-            value2 = self.getSmoothedQuat(value2, smoothed_orientation[i,:], alpha)
+            value2, fCoef = self.getSmoothedQuat(value2, smoothed_orientation[i,:], alpha)
             smoothed_orientation2[i] = value2
 
         return (self.time_list, smoothed_orientation2)
