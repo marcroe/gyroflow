@@ -155,8 +155,8 @@ class Launcher(QtWidgets.QWidget):
             extra = ""
 
             diff = [int(A) - int(B) for A,B in zip(new,current)]
-            val = diff[0] if diff[0] != 0 else diff[1] if diff[1] != 0 else diff[2] if diff[2] != 0 else 0  
-            
+            val = diff[0] if diff[0] != 0 else diff[1] if diff[1] != 0 else diff[2] if diff[2] != 0 else 0
+
             showpopup = not background
 
             if newest_version.strip() == __version__.strip():
@@ -1378,7 +1378,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.input_video_rotate_select.addItem("90° Counterclockwise", cv2.ROTATE_90_COUNTERCLOCKWISE) # 2
         self.input_video_rotate_select.addItem("180°", cv2.ROTATE_180) # 1
         self.input_controls_layout.addWidget(self.input_video_rotate_select)
-        
+
 
         data = [("rawblackbox", "Raw Betaflight Blackbox"), ("csvblackbox", "Betaflight Blackbox CSV"), ("csvgyroflow", "Gyroflow CSV log (ignore me)"), ("gpmf", "GoPro metadata"), ("insta360", "Insta360 metadata")]
 
@@ -1408,13 +1408,23 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.fpv_tilt_control.setMaximum(180)
         self.fpv_tilt_control.setValue(0)
 
+        self.blackbox_field_select_txt = QtWidgets.QLabel("Blackbox Source Field:")
+        self.blackbox_field_select = QtWidgets.QComboBox()
+        self.blackbox_field_select.addItem("Gyro ADC", "gyroADC")
+        self.blackbox_field_select.addItem("Debug", "debug") # 0
+
 
         # Only show when blackbox file is loaded
         self.fpv_tilt_text.setVisible(False)
         self.fpv_tilt_control.setVisible(False)
+        self.blackbox_field_select_txt.setVisible(False)
+        self.blackbox_field_select.setVisible(False)
 
         self.input_controls_layout.addWidget(self.fpv_tilt_text)
         self.input_controls_layout.addWidget(self.fpv_tilt_control)
+        self.input_controls_layout.addWidget(self.blackbox_field_select_txt)
+        self.input_controls_layout.addWidget(self.blackbox_field_select)
+
 
         self.camera_type_text = QtWidgets.QLabel('Camera type (integrated gyro)')
         self.input_controls_layout.addWidget(self.camera_type_text)
@@ -1784,7 +1794,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.pixfmt_select = QtWidgets.QLineEdit()
         #self.export_controls_layout.addWidget(self.pixfmt_select) # Shouldn't be required
 
-        
+
         bg_description = QtWidgets.QLabel("Background color. #HexCode, CSS color name, REPLICATE (Extend edge), HISTORY (Keep previous frame):")
         bg_description.setWordWrap(True)
         self.export_controls_layout.addWidget(bg_description)
@@ -1813,7 +1823,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.export_keyframes_button.setMinimumHeight(30)
         self.export_keyframes_button.setEnabled(False)
         self.export_keyframes_button.clicked.connect(self.export_keyframes)
-        
+
         self.export_controls_layout.addWidget(self.export_keyframes_button)
 
         # warning for HW encoding
@@ -1975,6 +1985,9 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
         self.fpv_tilt_text.setVisible(external)
         self.fpv_tilt_control.setVisible(external)
+
+        self.blackbox_field_select_txt.setVisible(external)
+        self.blackbox_field_select.setVisible(external)
 
         self.camera_type_control.setVisible(internal)
         self.camera_type_text.setVisible(internal)
@@ -2140,6 +2153,8 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
             # blackbox file
             uptilt = self.fpv_tilt_control.value()
 
+            bbField = self.blackbox_field_select.currentData()
+
             print("Going skiing?" if uptilt < 0 else "That's a lotta angle" if uptilt > 70 else "{} degree uptilt".format(uptilt))
 
             log_select_index = self.gyro_log_format_select.currentIndex()
@@ -2161,7 +2176,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
                 print("Unknown log type selected")
                 return
             self.stab = stabilizer.BBLStabilizer(self.infile_path, self.preset_path, self.gyro_log_path, fov_scale=fov_val, cam_angle_degrees=uptilt,
-                                                 use_csv=use_csv, gyro_lpf_cutoff = gyro_lpf, logtype=logtype)
+                                                 use_csv=use_csv, gyro_lpf_cutoff = gyro_lpf, logtype=logtype, blackboxField=bbField)
 
 
         self.stab.set_initial_offset(self.offset_control.value())
@@ -2198,7 +2213,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
     def export_keyframes(self):
         export_file_filter = "Comma-separated values (*.csv)"
-        
+
         filename = QtWidgets.QFileDialog.getSaveFileName(self, "Export keyframes", filter=export_file_filter)
         print("Output file: {}".format(filename[0]))
 

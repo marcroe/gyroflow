@@ -8,6 +8,7 @@ This module uses gyroscope data to compute quaternion orientations over time
 import numpy as np
 import quaternion as quat
 
+
 class GyroIntegrator:
     def __init__(self, input_data, time_scaling=1, gyro_scaling=1, zero_out_time=True, initial_orientation=None, acc_data=None):
         """Initialize instance of gyroIntegrator for getting orientation from gyro data
@@ -60,6 +61,7 @@ class GyroIntegrator:
         self.imuRefY = quat.vector(0,0,1)
 
         self.already_integrated = False
+
 
 
     def integrate_all(self):
@@ -173,9 +175,9 @@ class GyroIntegrator:
             # rotation quaternion from smooth motion -> raw motion to counteract it
             stab_rotations[i,:] = quat.rot_between(smoothed_orientation[i],self.orientation_list[i])
 
-        return (self.time_list, stab_rotations) 
+        return (self.time_list, stab_rotations)
 
-        
+
     def get_interpolated_stab_transform(self,smooth, start=0, interval=1/29.97):
         time_list, smoothed_orientation = self.get_stabilize_transform(smooth)
 
@@ -276,7 +278,7 @@ class FrameRotationIntegrator(GyroIntegrator):
             initial_orientation (float[4]): Quaternion representing the starting orientation, Defaults to [1, 0.0001, 0.0001, 0.0001].
         """
 
-            
+
         self.data = np.copy(input_data)
 
         self.num_data_points = self.data.shape[0]
@@ -313,7 +315,7 @@ class FrameRotationIntegrator(GyroIntegrator):
         # temp lists to save data
         temp_orientation_list = []
         temp_time_list = []
-        
+
 
         temp_orientation_list.append(np.copy(self.orientation))
         temp_time_list.append(self.data[0][0] - 1)
@@ -369,7 +371,7 @@ class EulerIntegrator:
             acc_data (numpy.ndarray): Nx4 array, where each row is [time, accX, accY, accZ]. TODO: Use this in orientation determination
         """
 
-    
+
         self.data = np.copy(input_data)
         # scale input data
         self.data[:,0] *= time_scaling
@@ -493,9 +495,9 @@ class EulerIntegrator:
             # rotation quaternion from smooth motion -> raw motion to counteract it
             stab_rotations[i,:] = quat.rot_between(smoothed_orientation[i],self.orientation_list[i])
 
-        return (self.time_list, stab_rotations) 
+        return (self.time_list, stab_rotations)
 
-        
+
     def get_interpolated_stab_transform(self,smooth, start=0, interval=1/29.97):
         time_list, smoothed_orientation = self.get_stabilize_transform(smooth)
 
@@ -592,15 +594,15 @@ if __name__ == "__main__":
     integrator.integrate_all()
     stabtransforms =integrator.get_interpolated_stab_transform(0.5)[1]
     orig = stabtransforms[50]
- 
+
     # Hero 6 as reference
     fake_gyro_data[:,2] = -fake_gyro_data[:,2]
     integrator = GyroIntegrator(fake_gyro_data, time_scaling=1, gyro_scaling=1, zero_out_time=True, initial_orientation=None, acc_data=None)
     integrator.integrate_all()
     stabtransforms =integrator.get_interpolated_stab_transform(0.5)[1]
     weird = stabtransforms[50]
-    
-    print(weird)    
+
+    print(weird)
     print(orig)
 
 

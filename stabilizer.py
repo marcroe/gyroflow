@@ -81,7 +81,7 @@ class Stabilizer:
     def auto_sync_stab(self, smooth=0.8, sliceframe1 = 10, sliceframe2 = 1000, slicelength = 50, debug_plots = True):
         if debug_plots:
             FreqAnalysis(self.integrator).sampleFrequencyAnalysis()
-            
+
         v1 = (sliceframe1 + slicelength/2) / self.fps
         v2 = (sliceframe2 + slicelength/2) / self.fps
         d1, times1, transforms1 = self.optical_flow_comparison(sliceframe1, slicelength, debug_plots = debug_plots)
@@ -117,23 +117,23 @@ class Stabilizer:
 
         xplot = plt.subplot(311)
 
+        plt.plot(corrected_times, self.integrator.get_raw_data("x"))
         plt.plot(times1, -transforms1[:,0] * self.fps)
         plt.plot(times2, -transforms2[:,0] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("x"))
         plt.ylabel("omega x [rad/s]")
 
         plt.subplot(312, sharex=xplot)
 
+        plt.plot(corrected_times, self.integrator.get_raw_data("y"))
         plt.plot(times1, -transforms1[:,1] * self.fps)
         plt.plot(times2, -transforms2[:,1] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("y"))
         plt.ylabel("omega y [rad/s]")
 
         plt.subplot(313, sharex=xplot)
 
+        plt.plot(corrected_times, self.integrator.get_raw_data("z"))
         plt.plot(times1, transforms1[:,2] * self.fps)
         plt.plot(times2, transforms2[:,2] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("z"))
         #plt.plot(self.integrator.get_raw_data("t") + d2, self.integrator.get_raw_data("z"))
         plt.xlabel("time [s]")
         plt.ylabel("omega z [rad/s]")
@@ -567,7 +567,7 @@ class Stabilizer:
         (out_width, out_height) = out_size
 
         export_out_size = (int(out_size[0]*2*scale) if split_screen else int(out_size[0]*scale), int(out_size[1]*scale))
-        
+
         borderMode = 0
         borderValue = 0
 
@@ -655,7 +655,7 @@ class Stabilizer:
         print("Done computing optimal Fov")
 
         new_img_dim=(int(self.width * scale),int(self.height*scale))
-        
+
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, int(starttime * self.fps))
         time.sleep(0.1)
 
@@ -1084,10 +1084,12 @@ class InstaStabilizer(Stabilizer):
 
 
 class BBLStabilizer(Stabilizer):
-    def __init__(self, videopath, calibrationfile, bblpath, fov_scale = 1.6, cam_angle_degrees=0, initial_offset=0, use_csv=False, gyro_lpf_cutoff = 200, logtype="", video_rotation = -1):
+    def __init__(self, videopath, calibrationfile, bblpath, fov_scale = 1.6, cam_angle_degrees=0, initial_offset=0, use_csv=False, gyro_lpf_cutoff = 200, logtype="", video_rotation = -1, blackboxField="gyroADC"):
 
         super().__init__()
 
+        print("Blackbox Field selected: {}".format(blackboxField))
+        
         # General video stuff
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath)
@@ -1120,7 +1122,7 @@ class BBLStabilizer(Stabilizer):
                 for i, row in enumerate(csv_reader):
                     #print(row)
                     if(row[0] == "loopIteration"):
-                        gyro_index = row.index('gyroADC[0]')
+                        gyro_index = row.index(blackboxField + '[0]')
                         break
 
                 data_list = []
@@ -1188,7 +1190,7 @@ class BBLStabilizer(Stabilizer):
         else:
             try:
                 self.bbe = BlackboxExtractor(bblpath)
-                self.gyro_data = self.bbe.get_gyro_data(cam_angle_degrees=cam_angle_degrees)
+                self.gyro_data = self.bbe.get_gyro_data(cam_angle_degrees=cam_angle_degrees, blackboxField=blackboxField)
             except ValueError:
                 print("Error reading raw blackbox file. Try converting to CSV in blackbox explorer")
 

@@ -16,29 +16,29 @@ class BlackboxExtractor:
 
         self.gyro_rate = 0
 
-    def get_gyro_data(self,cam_angle_degrees=0):
+    def get_gyro_data(self,cam_angle_degrees=0, blackboxField="gyroADC"):
 
         if self.extracted:
             return np.array(self.final_gyro_data)
-        
+
         self.camera_angle = cam_angle_degrees
         r  = Rotation.from_euler('x', self.camera_angle, degrees=True)
-        
+
         for lg in range(1,self.n_of_logs+1):
             self.parser.set_log_index(lg)
             t  = self.parser.field_names.index('time')
-            gx = self.parser.field_names.index('gyroADC[1]')
-            gy = self.parser.field_names.index('gyroADC[2]')
-            gz = self.parser.field_names.index('gyroADC[0]')
+            gx = self.parser.field_names.index(blackboxField + '[1]') #gyroADC[1]')
+            gy = self.parser.field_names.index(blackboxField + '[2]') #gyroADC[2]')
+            gz = self.parser.field_names.index(blackboxField + '[0]') #gyroADC[0]')
             data_frames = []
-            
+
             for frame in self.parser.frames():
                 to_rotate = [-math.radians(frame.data[gx]),
                              math.radians(frame.data[gy]),
                              -math.radians(frame.data[gz])]
-                
+
                 rotated = r.apply(to_rotate)
-                
+
                 f = [frame.data[t]/1000000,
                      rotated[0],
                      rotated[1],
@@ -48,7 +48,7 @@ class BlackboxExtractor:
                 #     math.radians(frame.data[gz]),
                 #     -math.radians(frame.data[gy])]
                 data_frames.append(f)
-                
+
             self.final_gyro_data.extend(data_frames)
 
 

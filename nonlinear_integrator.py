@@ -109,7 +109,7 @@ class NonLinIntegrator(GyroIntegrator):
         #plt.plot(distorted_points[:,0], distorted_points[:,1], 'bo')
         #plt.show()
 
-    def getSmoothedQuat(self, virtualVal, phyVal, smooth, tradeoff = 0.9, beta = 2.0, maxOvershoot = 0.5):
+    def getSmoothedQuat(self, virtualVal, phyVal, smooth, tradeoff = 0.9, beta = 3.0, maxOvershoot = 0.5):
         #lookahead = quat.slerp(virtualVal, phyVal, [smooth])[0]
         q = quat.rot_between(virtualVal, phyVal) #lookahead)
         q = q.flatten()
@@ -134,7 +134,7 @@ class NonLinIntegrator(GyroIntegrator):
         maxDist = np.max((maxDist,0))
         scaledDist = maxDist / ( np.max(self.K[0,2]) * maxOvershoot)
         scaledDist = np.min((scaledDist,1.0))
-        scaledDist = np.power(scaledDist, 1.0+beta)
+        scaledDist = np.power(scaledDist, beta)
 
         self.dbg = self.dbg + 1
         if self.dbg > 2500000000 and ((self.dbg % 100) == 0):
