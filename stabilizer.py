@@ -78,7 +78,7 @@ class Stabilizer:
         self.gyro_data[:,1:4] = signal.sosfiltfilt(sosgyro, self.gyro_data[:,1:4], 0) # Filter along "vertical" time axis
 
 
-    def auto_sync_stab(self, smooth=0.8, sliceframe1 = 10, sliceframe2 = 1000, slicelength = 50, debug_plots = True):
+    def auto_sync_stab(self, smooth=0.8, sliceframe1 = 10, sliceframe2 = 1000, slicelength = 50, exactTimestamps = True, debug_plots = True):
         if debug_plots:
             FreqAnalysis(self.integrator).sampleFrequencyAnalysis()
 
@@ -116,24 +116,21 @@ class Stabilizer:
         print("Gyro correction slope {}".format(slope))
 
         xplot = plt.subplot(311)
-
+        plt.plot(corrected_times, self.integrator.get_raw_data("x"))
         plt.plot(times1, -transforms1[:,0] * self.fps)
         plt.plot(times2, -transforms2[:,0] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("x"))
         plt.ylabel("omega x [rad/s]")
 
         plt.subplot(312, sharex=xplot)
-
+        plt.plot(corrected_times, self.integrator.get_raw_data("y"))
         plt.plot(times1, -transforms1[:,1] * self.fps)
         plt.plot(times2, -transforms2[:,1] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("y"))
         plt.ylabel("omega y [rad/s]")
 
         plt.subplot(313, sharex=xplot)
-
+        plt.plot(corrected_times, self.integrator.get_raw_data("z"))
         plt.plot(times1, transforms1[:,2] * self.fps)
         plt.plot(times2, transforms2[:,2] * self.fps)
-        plt.plot(corrected_times, self.integrator.get_raw_data("z"))
         #plt.plot(self.integrator.get_raw_data("t") + d2, self.integrator.get_raw_data("z"))
         plt.xlabel("time [s]")
         plt.ylabel("omega z [rad/s]")
@@ -152,26 +149,41 @@ class Stabilizer:
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
 
-        self.frameTimestamps = self.extractFrameTimestamps()
+        self.frameTimestamps = self.extractFrameTimestamps(exactTimestamps)
         self.last_smooth = smooth
         self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,frameTimeStamps=self.frameTimestamps)
 
         #self.times, self.stab_transform = self.integrator.get_interpolated_stab_transform(smooth=smooth,start=-gyro_start,interval = interval)
 
-    def extractFrameTimestamps(self):
-        print("Start reading presentation time stamps of video frames")
-        totalFrames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-        time.sleep(0.05)
-        pts = []
-        for i in range(totalFrames):
-            if i % int(totalFrames/10) == 0:
-                print("{}%".format(int(100*(i+1)/totalFrames)))
-            self.cap.grab()
-            frame_time = (self.cap.get(cv2.CAP_PROP_POS_MSEC)/1000)
-            pts.append(frame_time)
-        print("Done reading presentation time stamps of video frames")
-        return np.array(pts)
+    def extractFrameTimestamps(self, exactTimestamps):
+        if not exactTimestamps:
+            totalFrames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            ts = np.arange(totalFrames)/ self.fps
+            return ts
+
+        npzFile = self.videopath + "_TS.npz"
+        if os.path.isfile(npzFile):
+            print("File {} found. Loading frame TS of video {}".format(npzFile,self.videopath))
+            contents = np.load(npzFile)
+            return contents['frameTS']
+        else:
+            print("Start reading presentation time stamps of video frames")
+            totalFrames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            time.sleep(0.05)
+            pts = []
+            for i in range(totalFrames):
+                if i % int(totalFrames/10) == 0:
+                    print("{}%".format(int(100*(i+1)/totalFrames)))
+                self.cap.grab()
+                frame_time = (self.cap.get(cv2.CAP_PROP_POS_MSEC)/1000)
+                pts.append(frame_time)
+            pts = np.array(pts)
+            print("Done reading presentation time stamps of video frames")
+            np.savez(npzFile, frameTS=pts)
+            print("Save frame TS of video {} to {}".format(self.videopath,npzFile))
+            return pts
+
 
     def manual_sync_correction(self, d1, d2, smooth=0.8):
         v1 = self.v1
@@ -795,6 +807,7 @@ class OnlyUndistort:
     def __init__(self, videopath, calibrationfile, fov_scale = 1.5):
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath)
+        self.videopath = videopath
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -925,6 +938,7 @@ class GPMFStabilizer(Stabilizer):
         # General video stuff
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath)
+        self.videopath = videopath
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -1016,6 +1030,7 @@ class InstaStabilizer(Stabilizer):
         # General video stuff
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath)
+        self.videopath = videopath
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -1108,6 +1123,7 @@ class BBLStabilizer(Stabilizer):
         # General video stuff
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath, cv2.CAP_FFMPEG)
+        self.videopath = videopath
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
@@ -1264,6 +1280,7 @@ class OpticalStabilizer:
     def __init__(self, videopath, calibrationfile):
         # General video stuff
         self.cap = cv2.VideoCapture(videopath)
+        self.videopath = videopath
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)

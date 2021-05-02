@@ -155,8 +155,8 @@ class Launcher(QtWidgets.QWidget):
             extra = ""
 
             diff = [int(A) - int(B) for A,B in zip(new,current)]
-            val = diff[0] if diff[0] != 0 else diff[1] if diff[1] != 0 else diff[2] if diff[2] != 0 else 0  
-            
+            val = diff[0] if diff[0] != 0 else diff[1] if diff[1] != 0 else diff[2] if diff[2] != 0 else 0
+
             showpopup = not background
 
             if newest_version.strip() == __version__.strip():
@@ -1378,7 +1378,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.input_video_rotate_select.addItem("90° Counterclockwise", cv2.ROTATE_90_COUNTERCLOCKWISE) # 2
         self.input_video_rotate_select.addItem("180°", cv2.ROTATE_180) # 1
         self.input_controls_layout.addWidget(self.input_video_rotate_select)
-        
+
 
         data = [("rawblackbox", "Raw Betaflight Blackbox"), ("csvblackbox", "Betaflight Blackbox CSV"), ("csvgyroflow", "Gyroflow CSV log (ignore me)"), ("gpmf", "GoPro metadata"), ("insta360", "Insta360 metadata")]
 
@@ -1588,6 +1588,10 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.sync_debug_select.setChecked(True)
         self.sync_controls_layout.addWidget(self.sync_debug_select)
 
+        self.exactPTS_select = QtWidgets.QCheckBox("Compute exact time stamp for every video frame")
+        self.exactPTS_select.setChecked(True)
+        self.sync_controls_layout.addWidget(self.exactPTS_select)
+
         # button for (re)computing sync
         self.recompute_stab_button = QtWidgets.QPushButton("Apply settings and compute sync")
         self.recompute_stab_button.setMinimumHeight(30)
@@ -1784,7 +1788,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.pixfmt_select = QtWidgets.QLineEdit()
         #self.export_controls_layout.addWidget(self.pixfmt_select) # Shouldn't be required
 
-        
+
         bg_description = QtWidgets.QLabel("Background color. #HexCode, CSS color name, REPLICATE (Extend edge), HISTORY (Keep previous frame):")
         bg_description.setWordWrap(True)
         self.export_controls_layout.addWidget(bg_description)
@@ -1813,7 +1817,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.export_keyframes_button.setMinimumHeight(30)
         self.export_keyframes_button.setEnabled(False)
         self.export_keyframes_button.clicked.connect(self.export_keyframes)
-        
+
         self.export_controls_layout.addWidget(self.export_keyframes_button)
 
         # warning for HW encoding
@@ -2173,7 +2177,8 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
 
         self.stab.auto_sync_stab(smoothness_time_constant, sync1_frame, sync2_frame,
-                                 OF_slice_length, debug_plots=self.sync_debug_select.isChecked())
+                                 OF_slice_length, exactTimestamps=self.exactPTS_select.isChecked(),
+                                 debug_plots=self.sync_debug_select.isChecked())
 
         self.recompute_stab_button.setText("Recompute sync")
         self.export_button.setEnabled(True)
@@ -2198,7 +2203,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
     def export_keyframes(self):
         export_file_filter = "Comma-separated values (*.csv)"
-        
+
         filename = QtWidgets.QFileDialog.getSaveFileName(self, "Export keyframes", filter=export_file_filter)
         print("Output file: {}".format(filename[0]))
 
