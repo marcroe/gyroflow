@@ -81,7 +81,7 @@ class Stabilizer:
     def auto_sync_stab(self, smooth=0.8, sliceframe1 = 10, sliceframe2 = 1000, slicelength = 50, debug_plots = True):
         if debug_plots:
             FreqAnalysis(self.integrator).sampleFrequencyAnalysis()
-            
+
         v1 = (sliceframe1 + slicelength/2) / self.fps
         v2 = (sliceframe2 + slicelength/2) / self.fps
         d1, times1, transforms1 = self.optical_flow_comparison(sliceframe1, slicelength, debug_plots = debug_plots)
@@ -151,10 +151,27 @@ class Stabilizer:
 
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
+
+        self.frameTimestamps = self.extractFrameTimestamps()
         self.last_smooth = smooth
-        self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,interval = 1/self.fps)
+        self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,frameTimeStamps=self.frameTimestamps)
 
         #self.times, self.stab_transform = self.integrator.get_interpolated_stab_transform(smooth=smooth,start=-gyro_start,interval = interval)
+
+    def extractFrameTimestamps(self):
+        print("Start reading presentation time stamps of video frames")
+        totalFrames = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        time.sleep(0.05)
+        pts = []
+        for i in range(totalFrames):
+            if i % int(totalFrames/10) == 0:
+                print("{}%".format(int(100*(i+1)/totalFrames)))
+            self.cap.grab()
+            frame_time = (self.cap.get(cv2.CAP_PROP_POS_MSEC)/1000)
+            pts.append(frame_time)
+        print("Done reading presentation time stamps of video frames")
+        return np.array(pts)
 
     def manual_sync_correction(self, d1, d2, smooth=0.8):
         v1 = self.v1
@@ -208,7 +225,7 @@ class Stabilizer:
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
         self.last_smooth = smooth
-        self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,interval = 1/self.fps)
+        self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,frameTimeStamps=self.frameTimestamps)
 
         #self.times, self.stab_transform = self.integrator.get_interpolated_stab_transform(smooth=smooth,start=-gyro_start,interval = interval)
 
@@ -567,7 +584,7 @@ class Stabilizer:
         (out_width, out_height) = out_size
 
         export_out_size = (int(out_size[0]*2*scale) if split_screen else int(out_size[0]*scale), int(out_size[1]*scale))
-        
+
         borderMode = 0
         borderValue = 0
 
@@ -655,7 +672,7 @@ class Stabilizer:
         print("Done computing optimal Fov")
 
         new_img_dim=(int(self.width * scale),int(self.height*scale))
-        
+
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, int(starttime * self.fps))
         time.sleep(0.1)
 
@@ -1090,7 +1107,7 @@ class BBLStabilizer(Stabilizer):
 
         # General video stuff
         self.undistort_fov_scale = fov_scale
-        self.cap = cv2.VideoCapture(videopath)
+        self.cap = cv2.VideoCapture(videopath, cv2.CAP_FFMPEG)
         self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         self.fps = self.cap.get(cv2.CAP_PROP_FPS)
