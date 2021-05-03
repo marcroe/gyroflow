@@ -1408,13 +1408,21 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
         self.fpv_tilt_control.setMaximum(180)
         self.fpv_tilt_control.setValue(0)
 
+        self.blackbox_field_select_txt = QtWidgets.QLabel("Blackbox Source Field:")
+        self.blackbox_field_select = QtWidgets.QComboBox()
+        self.blackbox_field_select.addItem("Gyro ADC", "gyroADC")
+        self.blackbox_field_select.addItem("Debug", "debug") # 0
 
         # Only show when blackbox file is loaded
         self.fpv_tilt_text.setVisible(False)
         self.fpv_tilt_control.setVisible(False)
+        self.blackbox_field_select_txt.setVisible(False)
+        self.blackbox_field_select.setVisible(False)
 
         self.input_controls_layout.addWidget(self.fpv_tilt_text)
         self.input_controls_layout.addWidget(self.fpv_tilt_control)
+        self.input_controls_layout.addWidget(self.blackbox_field_select_txt)
+        self.input_controls_layout.addWidget(self.blackbox_field_select)
 
         self.camera_type_text = QtWidgets.QLabel('Camera type (integrated gyro)')
         self.input_controls_layout.addWidget(self.camera_type_text)
@@ -1973,6 +1981,8 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
         external = selected_log_type in ["rawblackbox", "csvblackbox", "csvgyroflow"] # display more settings if external source is used
 
+        bbExternal = selected_log_type in ["rawblackbox", "csvblackbox"]
+
         videofile_selected = bool(self.infile_path)
         gyrofile_selected = bool(self.gyro_log_path)
         internal = not external
@@ -1982,6 +1992,9 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
 
         self.camera_type_control.setVisible(internal)
         self.camera_type_text.setVisible(internal)
+
+        self.blackbox_field_select_txt.setVisible(bbExternal)
+        self.blackbox_field_select.setVisible(bbExternal)
 
         if gyrofile_selected:
             self.open_gyro_button.setText("Gyro data: {} (click to remove)".format(self.gyro_log_path.split("/")[-1]))
@@ -2144,6 +2157,8 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
             # blackbox file
             uptilt = self.fpv_tilt_control.value()
 
+            bbField = self.blackbox_field_select.currentData()
+
             print("Going skiing?" if uptilt < 0 else "That's a lotta angle" if uptilt > 70 else "{} degree uptilt".format(uptilt))
 
             log_select_index = self.gyro_log_format_select.currentIndex()
@@ -2165,7 +2180,7 @@ class StabUtilityBarebone(QtWidgets.QMainWindow):
                 print("Unknown log type selected")
                 return
             self.stab = stabilizer.BBLStabilizer(self.infile_path, self.preset_path, self.gyro_log_path, fov_scale=fov_val, cam_angle_degrees=uptilt,
-                                                 use_csv=use_csv, gyro_lpf_cutoff = gyro_lpf, logtype=logtype)
+                                                 use_csv=use_csv, gyro_lpf_cutoff = gyro_lpf, logtype=logtype, bbField=bbField)
 
 
         self.stab.set_initial_offset(self.offset_control.value())
