@@ -161,7 +161,7 @@ class Stabilizer:
             ts = np.arange(totalFrames)/ self.fps
             return ts
 
-        npzFile = self.videopath + "_TS.npz"
+        npzFile = os.path.splitext(self.videopath)[0] + "_TS.npz"
         if os.path.isfile(npzFile):
             print("File {} found. Loading frame TS of video {}".format(npzFile,self.videopath))
             contents = np.load(npzFile)
@@ -1116,7 +1116,8 @@ class InstaStabilizer(Stabilizer):
 
 
 class BBLStabilizer(Stabilizer):
-    def __init__(self, videopath, calibrationfile, bblpath, fov_scale = 1.6, cam_angle_degrees=0, initial_offset=0, use_csv=False, gyro_lpf_cutoff = 200, logtype="", video_rotation = -1):
+    def __init__(self, videopath, calibrationfile, bblpath, fov_scale = 1.6, cam_angle_degrees=0,
+                initial_offset=0, use_csv=False, gyro_lpf_cutoff = 200, logtype="", bbField="gyroADC", video_rotation = -1):
 
         super().__init__()
 
@@ -1142,6 +1143,8 @@ class BBLStabilizer(Stabilizer):
         # Get gyro data
         print(bblpath)
 
+        print("Using {} blackbox field".format(bbField))
+
         # quick fix
         cam_angle_degrees = -cam_angle_degrees
 
@@ -1153,7 +1156,7 @@ class BBLStabilizer(Stabilizer):
                 for i, row in enumerate(csv_reader):
                     #print(row)
                     if(row[0] == "loopIteration"):
-                        gyro_index = row.index('gyroADC[0]')
+                        gyro_index = row.index(bbField + '[0]')
                         break
 
                 data_list = []
@@ -1221,7 +1224,7 @@ class BBLStabilizer(Stabilizer):
         else:
             try:
                 self.bbe = BlackboxExtractor(bblpath)
-                self.gyro_data = self.bbe.get_gyro_data(cam_angle_degrees=cam_angle_degrees)
+                self.gyro_data = self.bbe.get_gyro_data(cam_angle_degrees=cam_angle_degrees, bbField=bbField)
             except ValueError:
                 print("Error reading raw blackbox file. Try converting to CSV in blackbox explorer")
 
