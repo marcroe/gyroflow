@@ -721,15 +721,7 @@ class Stabilizer:
 
             if success and i > 0:
 
-                #if scale != 1:
-                #    frame = cv2.resize(frame, (int(self.width * scale),int(self.height*scale)), interpolation=cv2.INTER_LINEAR)
-
-                #frame_undistort = cv2.remap(frame, tempmap1, tempmap2, interpolation=cv2.INTER_LINEAR, # INTER_CUBIC
-                #                              borderMode=cv2.BORDER_CONSTANT)
-
-                fac = zoom
-
-                tmap1, tmap2 = self.undistort.get_maps((1/fac)*fcorr[frame_num],
+                tmap1, tmap2 = self.undistort.get_maps((1/zoom)*fcorr[frame_num],
                                                         new_img_dim=(self.width,self.height),
                                                         output_dim=out_size,
                                                         update_new_K = False, quat = self.stab_transform[frame_num],
@@ -743,8 +735,8 @@ class Stabilizer:
                                               borderMode=borderMode, borderValue=borderValue)
 
                 if debug_text:
-                    topleft = ( int(out_width/2*(1-fac)), int(out_height/2*(1-fac)) )
-                    bottomright = ( int(out_width/2*(1+fac)), int(out_height/2*(1+fac)) )
+                    topleft = ( int(out_width/2*(1-zoom)), int(out_height/2*(1-zoom)) )
+                    bottomright = ( int(out_width/2*(1+zoom)), int(out_height/2*(1+zoom)) )
                     frame_out = cv2.rectangle(frame_out, topleft,
                                                          bottomright, (255,0,0), 3)
 

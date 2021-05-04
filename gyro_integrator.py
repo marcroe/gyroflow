@@ -162,18 +162,33 @@ class GyroIntegrator:
         return (self.time_list, smoothed_orientation2)
 
 
-    def get_stabilize_transform(self,smooth=0.94):
-        time_list, smoothed_orientation = self.get_smoothed_orientation(smooth)
+    def get_stabilize_transform(self, smooth=0.94, refresh=False):
+        if self.get_stabilize_transform_computed is None or
+                not self.get_stabilize_transform_computed or
+                refresh:
+            self.get_stabilize_transform_computed = True
+            time_list, smoothed_orientation = self.get_smoothed_orientation(smooth)
 
+            # rotations that'll stabilize the camera
+            stab_rotations = np.zeros(self.orientation_list.shape)
 
-        # rotations that'll stabilize the camera
-        stab_rotations = np.zeros(self.orientation_list.shape)
+            for i in range(self.num_data_points):
+                # rotation quaternion from smooth motion -> raw motion to counteract it
+                stab_rotations[i,:] = quat.rot_between(smoothed_orientation[i],self.orientation_list[i])
 
-        for i in range(self.num_data_points):
-            # rotation quaternion from smooth motion -> raw motion to counteract it
-            stab_rotations[i,:] = quat.rot_between(smoothed_orientation[i],self.orientation_list[i])
+            self.stab_rotations = stab_rotations
+        return (self.time_list, self.stab_rotations)
 
-        return (self.time_list, stab_rotations)
+    def get_interpolated_stab_quaternion(self, frameTime=0):
+        time_list, smoothed_orientation = self.get_stabilize_transform(smooth)
+        if frameTime <= time_list[0]:
+            return smoothed_orientation[0]
+        elif frameTime >= time_list[-1]:
+            return smoothed_orientation[-1]
+        else:
+            i = np.searchsorted(time_list, frameTime) - 1
+            weight = (frameTime - time_list[i])/(time_list[i+1]-time_list[i])
+            return quat.slerp(smoothed_orientation[i],smoothed_orientation[i+1],[weight]))
 
 
     def get_interpolated_stab_transform(self,smooth, start=0, frameTimeStamps=None):
