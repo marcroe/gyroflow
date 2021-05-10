@@ -163,9 +163,7 @@ class GyroIntegrator:
 
 
     def get_stabilize_transform(self, smooth=0.94, refresh=False):
-        if self.get_stabilize_transform_computed is None or
-                not self.get_stabilize_transform_computed or
-                refresh:
+        if self.get_stabilize_transform_computed is None or not self.get_stabilize_transform_computed or refresh:
             self.get_stabilize_transform_computed = True
             time_list, smoothed_orientation = self.get_smoothed_orientation(smooth)
 
@@ -188,7 +186,7 @@ class GyroIntegrator:
         else:
             i = np.searchsorted(time_list, frameTime) - 1
             weight = (frameTime - time_list[i])/(time_list[i+1]-time_list[i])
-            return quat.slerp(smoothed_orientation[i],smoothed_orientation[i+1],[weight]))
+            return quat.slerp(smoothed_orientation[i],smoothed_orientation[i+1],[weight])
 
 
     def get_interpolated_stab_transform(self,smooth, start=0, frameTimeStamps=None):
