@@ -5,6 +5,13 @@ import cv2
 from _version import __version__
 from tkinter import Tk
 from tkinter.filedialog import askopenfilename
+from matplotlib import pyplot as plt
+from scipy.interpolate import griddata
+from scipy.spatial import KDTree
+from scipy.interpolate import NearestNDInterpolator
+import quaternion
+import time
+import math
 
 from scipy.spatial.transform import Rotation
 
@@ -252,6 +259,159 @@ class FisheyeCalibrator:
 
         return undistorted_image
 
+    def initRollingShutter(self, img_dim = None):
+        img_dim = img_dim if img_dim else self.calib_dimension
+        (original_width, original_height) = img_dim
+        self.distorted_pointsList = [np.array(
+                                        np.stack(np.meshgrid(np.arange(0, original_width, 20), np.array([h])), -1).reshape(-1, 2),
+                                        np.float64)
+                                        for h in np.arange(0, original_height, 1) ]
+        self.distorted_points = np.concatenate(self.distorted_pointsList)
+
+        self.grid = np.stack(np.meshgrid(np.arange(0, original_width, 1), np.arange(0, original_height, 1)), -1).reshape(-1, 2)
+
+    def get_maps_rolling_shutter(self, fov_scale = 1.0, output_dim = None, new_img_dim = None,
+                                 quats = None, focalCenter = None):
+        img_dim = new_img_dim if new_img_dim else self.calib_dimension
+        out_dim = output_dim if output_dim else self.calib_dimension
+        focalCenter = focalCenter if focalCenter is not None else np.array([self.calib_dimension[0]/2,self.calib_dimension[1]/2])
+
+        img_dim_ratio = img_dim[0] / self.calib_dimension[0]
+
+        scaled_K = self.K * img_dim_ratio
+        scaled_K[2][2] = 1.0
+
+        new_K = np.copy(self.K)
+        new_K[0][0] = new_K[0][0] * 1.0/fov_scale
+        new_K[1][1] = new_K[1][1] * 1.0/fov_scale
+        new_K[0][2] = out_dim[0]/2
+        new_K[1][2] = out_dim[1]/2
+
+        invNew_K = inverse_cam_mtx(new_K)
+
+        quats = [quat.flatten() for quat in quats]
+        RotMats = [Rotation([-quat[1],-quat[2],quat[3],-quat[0]]).as_matrix() for quat in quats]
+
+        invQuats = [quaternion.inverse(quat) for quat in quats]
+        invRotMats = [Rotation([-quat[1],-quat[2],quat[3],-quat[0]]).as_matrix() for quat in invQuats]
+        invRotMats = np.stack(invRotMats)
+
+        ######################
+
+        (original_width, original_height) = img_dim
+        (output_width, output_height) = out_dim
+
+        assert len(RotMats) == original_height
+        assert len(RotMats) == len(self.distorted_pointsList)
+
+        undistorted_pointsList = [cv2.fisheye.undistortPoints(np.expand_dims(distortedP, axis=0), #add one dim
+                                                            scaled_K, self.D, R=RotMat, P=new_K)[0,:,:] #remove extra dimension
+                                                            for distortedP, RotMat in zip(self.distorted_pointsList, RotMats)]
+        undistorted_points = np.concatenate(undistorted_pointsList)
+
+        msk = (undistorted_points[:,0] >= 0) & (undistorted_points[:,0] <= original_width) & \
+                (undistorted_points[:,1] >= 0) & (undistorted_points[:,1] <= original_height)
+        undistorted_points = undistorted_points[msk]
+        distorted_pointsLocal = self.distorted_points[msk]
+
+
+        #plt.scatter(distorted_points[:,0],distorted_points[:,1], color='red', s=1)
+        #plt.scatter(undistorted_points[:,0], undistorted_points[:,1], color='blue', s=1)
+        #plt.show()
+        #exit()
+
+        #tree = KDTree(undistorted_points)
+        #_, ii = tree.query(self.grid, k=1, eps=0.05, distance_upper_bound=35)
+        #lookup = distorted_pointsLocal[ii,1]
+        #lookup = lookup.reshape(original_height, original_width)
+        #plt.imshow(lookup)
+        #plt.show()
+
+        start_time = time.time()
+        interp = NearestNDInterpolator(undistorted_points, distorted_pointsLocal[:,1])
+        shutterLines = interp(self.grid).astype(int)
+
+        worldpoints = np.ones((shutterLines.size, 3))
+        worldpoints[:,0:2] = (self.grid - new_K[0:2,2]) / np.array( (new_K[0,0], new_K[1,1]) )
+        rotatedWpoints = np.matmul(invRotMats[shutterLines], np.expand_dims(worldpoints, axis=-1))
+        rotatedWpoints = np.squeeze(rotatedWpoints)
+        rotatedWpoints[:,0] /= rotatedWpoints[:,2]
+        rotatedWpoints[:,1] /= rotatedWpoints[:,2]
+        r = np.linalg.norm(rotatedWpoints[:,0:2], axis=1)
+        theta = np.arctan(r)
+        theta2 = theta*theta
+        theta4 = theta2*theta2
+        theta6 = theta4*theta2
+        theta8 = theta4*theta4
+        theta_d = theta * (1 + self.D[0]*theta2 + self.D[1]*theta4 + self.D[2]*theta6 + self.D[3]*theta8)
+        scale = np.ones(theta_d.shape)
+        rMask = (r > 0)
+        scale[rMask] = theta_d[rMask] / r[rMask]
+
+        map1 = (rotatedWpoints[:,0]*scale ).reshape(original_height, original_width)
+        map2 = (rotatedWpoints[:,1]*scale ).reshape(original_height, original_width)
+
+        map1 *= scaled_K[0,0]
+        map2 *= scaled_K[1,1]
+        map1 += scaled_K[0,2]
+        map2 += scaled_K[1,2]
+
+        map1 = map1.astype('float32')
+        map2 = map2.astype('float32')
+
+        #lookup = lookup.reshape(original_height, original_width).astype(int)
+        #print(lookup.shape)
+        #plt.imshow(Z.reshape(original_height, original_width))
+        #plt.show()
+
+        #interpMat = griddata(undistorted_points, distorted_pointsLocal[:,1], self.grid, method='nearest') #.astype(int)
+        #interpMat = griddata(undistorted_points, distorted_pointsLocal[:,1], self.grid, method='linear').astype(int)
+        #interpMat = interpMat.reshape(original_height, original_width)
+
+        #plt.imshow(interpMat)
+        #plt.show()
+
+        #for i in range(output_height):  #( int i = 0; i < size.height; ++i)
+            #print(i)
+            #for j in range(output_width): #( int j = 0; j < size.width; ++j)
+#        map1 = np.zeros((original_height, original_width), np.float32)
+#        map2 = np.zeros((original_height, original_width), np.float32)
+
+#        for index, shutterLine in np.ndenumerate(lookup):
+#            (i, j) = index
+#            wp =  np.array([ (j-new_K[0,2])/new_K[0,0], (i-new_K[1,2])/new_K[1,1], 1.0 ]) # world point
+#            wp =  np.matmul(invRotMats[shutterLine], wp) # rotate
+#
+#            if wp[2] <= 0:
+#                print('error: _w <= 0')
+#                exit()
+#
+#            x = wp[0]/wp[2]
+#            y = wp[1]/wp[2]
+#            r = math.sqrt(x*x + y*y)
+#            theta = math.atan(r)
+#
+    #        theta2 = theta*theta
+    #        theta4 = theta2*theta2
+    #        theta6 = theta4*theta2
+    #        theta8 = theta4*theta4
+        #    theta_d = theta * (1 + self.D[0]*theta2 + self.D[1]*theta4 + self.D[2]*theta6 + self.D[3]*theta8)
+
+        #    scale = 1.0 if r == 0 else theta_d / r
+        #    map1[i,j] = x*scale
+        #    map2[i,j] = y*scale
+        print("--- %s seconds ---" % (time.time() - start_time))
+
+        #plt.scatter(distorted_points[:,0],distorted_points[:,1], color='red', s=1)
+        #plt.scatter(undistorted_points[:,0], undistorted_points[:,1], color='blue', s=1)
+        #figManager = plt.get_current_fig_manager()
+        #figManager.full_screen_toggle()
+        #plt.show()
+
+        #map1, map2 = cv2.fisheye.initUndistortRectifyMap(scaled_K, self.D, RotMats[int(original_height/2)], new_K, out_dim, cv2.CV_16SC2)
+
+        return map1, map2
+
     def get_maps(self, fov_scale = 1.0, output_dim = None, new_img_dim = None, update_new_K = True, quat = None, focalCenter = None):
         """Get undistortion maps
 
@@ -310,7 +470,7 @@ class FisheyeCalibrator:
 
     def recover_pose(self, pts1, pts2, new_img_dim = None):
         """ Find rotation matrices using epipolar geometry
-        
+
         Args:
             pts1 (np.ndarray): Initial points
             pts2 (np.ndarray): Resulting points
@@ -1068,7 +1228,7 @@ if __name__ == "__main__":
     #import glob
     #chessboard_size = (9,6)
     #images = glob.glob('calibrationImg/*.jpg')
-     
+
     CAMERA_DIST_COEFS = [
         0.01945104325838463,
         0.1093842438193295,

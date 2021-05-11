@@ -148,7 +148,7 @@ class Stabilizer:
 
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
-
+        self.new_integrator = new_integrator
         self.frameTimestamps = self.extractFrameTimestamps(exactTimestamps)
         self.last_smooth = smooth
         self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,frameTimeStamps=self.frameTimestamps)
@@ -236,6 +236,7 @@ class Stabilizer:
 
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
+        self.new_integrator = new_integrator
         self.last_smooth = smooth
         self.times, self.stab_transform = new_integrator.get_interpolated_stab_transform(smooth=smooth,start=0,frameTimeStamps=self.frameTimestamps)
 
@@ -591,7 +592,7 @@ class Stabilizer:
 
     def renderfile(self, starttime, stoptime, outpath = "Stabilized.mp4", out_size = (1920,1080), split_screen = True,
                    bitrate_mbits = 20, display_preview = False, scale=1, vcodec = "libx264", vprofile="main", pix_fmt = "",
-                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000"):
+                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000", rollingShutterCorrection=False):
 
         (out_width, out_height) = out_size
 
@@ -683,6 +684,8 @@ class Stabilizer:
                                                         smoothingFocus=smoothingFocus, debug_plots=(smoothingFocus != -1))
         print("Done computing optimal Fov")
 
+        self.undistort.initRollingShutter((self.width,self.height))
+
         new_img_dim=(int(self.width * scale),int(self.height*scale))
 
         self.cap.set(cv2.CAP_PROP_POS_FRAMES, int(starttime * self.fps))
@@ -720,12 +723,27 @@ class Stabilizer:
                 break
 
             if success and i > 0:
+                temp1 = temp2 = None
 
-                tmap1, tmap2 = self.undistort.get_maps((1/zoom)*fcorr[frame_num],
-                                                        new_img_dim=(self.width,self.height),
-                                                        output_dim=out_size,
-                                                        update_new_K = False, quat = self.stab_transform[frame_num],
-                                                        focalCenter = focalCenter[frame_num])
+                if rollingShutterCorrection:
+                    exactFrameTime = self.frameTimestamps[frame_num] #assume presentation Ts lies in the middle
+                    scanDuration = 0.033 * 0.4
+                    scanLineTimes = [exactFrameTime+scanDuration*(-0.5+ float(p)/self.height) for p in range(self.height)]
+                    #print(scanLineTimes)
+                    #print(exactFrameTime)
+                    scanLineQuaternions = [self.new_integrator.get_interpolated_stab_quaternion(ts) for ts in scanLineTimes]
+
+                    tmap1, tmap2 = self.undistort.get_maps_rolling_shutter((1/zoom)*fcorr[frame_num],
+                                                            new_img_dim=(self.width,self.height),
+                                                            output_dim=out_size,
+                                                            quats = scanLineQuaternions,
+                                                            focalCenter = focalCenter[frame_num])
+                else:
+                    tmap1, tmap2 = self.undistort.get_maps((1/zoom)*fcorr[frame_num],
+                                                            new_img_dim=(self.width,self.height),
+                                                            output_dim=out_size,
+                                                            update_new_K = False, quat = self.stab_transform[frame_num],
+                                                            focalCenter = focalCenter[frame_num])
 
                 #tmap1, tmap2 = self.undistort.get_maps(self.undistort_fov_scale,new_img_dim=(int(self.width * scale),int(self.height*scale)), update_new_K = False, quat = self.stab_transform[frame_num])
 

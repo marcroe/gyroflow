@@ -21,6 +21,8 @@ class GyroIntegrator:
             acc_data (numpy.ndarray): Nx4 array, where each row is [time, accX, accY, accZ]. TODO: Use this in orientation determination
         """
 
+        self.get_stabilize_transform_computed = False
+
         self.data = np.copy(input_data)
         # Check for corrupted/out of order timestamps
         time_order_check = self.data[:-1,0] > self.data[1:,0]
@@ -163,7 +165,7 @@ class GyroIntegrator:
 
 
     def get_stabilize_transform(self, smooth=0.94, refresh=False):
-        if self.get_stabilize_transform_computed is None or not self.get_stabilize_transform_computed or refresh:
+        if not self.get_stabilize_transform_computed or refresh:
             self.get_stabilize_transform_computed = True
             time_list, smoothed_orientation = self.get_smoothed_orientation(smooth)
 
@@ -178,7 +180,7 @@ class GyroIntegrator:
         return (self.time_list, self.stab_rotations)
 
     def get_interpolated_stab_quaternion(self, frameTime=0):
-        time_list, smoothed_orientation = self.get_stabilize_transform(smooth)
+        time_list, smoothed_orientation = (self.time_list, self.stab_rotations) #self.get_stabilize_transform(smooth)
         if frameTime <= time_list[0]:
             return smoothed_orientation[0]
         elif frameTime >= time_list[-1]:
