@@ -592,7 +592,7 @@ class Stabilizer:
 
     def renderfile(self, starttime, stoptime, outpath = "Stabilized.mp4", out_size = (1920,1080), split_screen = True,
                    bitrate_mbits = 20, display_preview = False, scale=1, vcodec = "libx264", vprofile="main", pix_fmt = "",
-                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000", rollingShutterCorrection=False):
+                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000", rollingShutterScanDuration=0):
 
         (out_width, out_height) = out_size
 
@@ -725,10 +725,9 @@ class Stabilizer:
             if success and i > 0:
                 temp1 = temp2 = None
 
-                if rollingShutterCorrection:
+                if rollingShutterScanDuration > 0:
                     exactFrameTime = self.frameTimestamps[frame_num] #assume presentation Ts lies in the middle
-                    scanDuration = 0.033 * 0.4
-                    scanLineTimes = [exactFrameTime+scanDuration*(-0.5+ float(p)/self.height) for p in range(self.height)]
+                    scanLineTimes = [exactFrameTime+rollingShutterScanDuration*(-0.5+ float(p)/self.height) for p in range(self.height)]
                     #print(scanLineTimes)
                     #print(exactFrameTime)
                     scanLineQuaternions = [self.new_integrator.get_interpolated_stab_quaternion(ts) for ts in scanLineTimes]
