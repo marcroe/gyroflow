@@ -592,7 +592,8 @@ class Stabilizer:
 
     def renderfile(self, starttime, stoptime, outpath = "Stabilized.mp4", out_size = (1920,1080), split_screen = True,
                    bitrate_mbits = 20, display_preview = False, scale=1, vcodec = "libx264", vprofile="main", pix_fmt = "",
-                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000", rollingShutterScanDuration=0):
+                   debug_text = False, custom_ffmpeg = "", smoothingFocus=2.0, zoom=1.0, bg_color="#000000", rollingShutterScanDuration=0,
+                   additional_txt = ""):
 
         (out_width, out_height) = out_size
 
@@ -727,10 +728,9 @@ class Stabilizer:
 
                 if rollingShutterScanDuration > 0:
                     exactFrameTime = self.frameTimestamps[frame_num] #assume presentation Ts lies in the middle
-                    scanLineTimes = [exactFrameTime+rollingShutterScanDuration*(-0.5+ float(p)/self.height) for p in range(self.height)]
-                    #print(scanLineTimes)
-                    #print(exactFrameTime)
-                    scanLineQuaternions = [self.new_integrator.get_interpolated_stab_quaternion(ts) for ts in scanLineTimes]
+                    scanLineTimes = np.array([exactFrameTime+rollingShutterScanDuration*(-0.5+ float(p)/self.height) for p in range(self.height)])
+                    scanLineQuaternions = \
+                        self.new_integrator.get_interpolated_stab_quaternion_rolling_shutter(lineTimes=scanLineTimes, refTime=exactFrameTime)
 
                     tmap1, tmap2 = self.undistort.get_maps_rolling_shutter((1/zoom)*fcorr[frame_num],
                                                             new_img_dim=(self.width,self.height),
@@ -774,7 +774,10 @@ class Stabilizer:
 
                 # temp debug text
                 if debug_text:
-                    frame_out = cv2.putText(frame_out, "{} | {:0.1f} s ({}) | tau={:.1f}".format(__version__, frame_num/self.fps, frame_num, self.last_smooth),
+                    txt =  "{} | {:0.1f} s ({}) | tau={:.1f} | rs={} | sF={} | zoom={} | {} | gyroCut={}".format(__version__,
+                                                frame_num/self.fps, frame_num, self.last_smooth, rollingShutterScanDuration, smoothingFocus,
+                                                zoom, self.bbField, self.gyro_lpf_cutoff)
+                    frame_out = cv2.putText(frame_out, txt,
                                             (5,30),cv2.FONT_HERSHEY_SIMPLEX,1,(200,200,200),2)
 
                 size = np.array(frame_out.shape)
@@ -1131,6 +1134,7 @@ class BBLStabilizer(Stabilizer):
         super().__init__()
 
         # General video stuff
+        self.bbField = bbField
         self.undistort_fov_scale = fov_scale
         self.cap = cv2.VideoCapture(videopath, cv2.CAP_FFMPEG)
         self.videopath = videopath

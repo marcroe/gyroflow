@@ -160,8 +160,8 @@ class GyroIntegrator:
         #        eul = Rotation([quat[1], quat[2], quat[3], quat[0]]).as_euler("xyz")
         #        new_quat = Rotation.from_euler('xyz', [eul[0], eul[1], np.pi]).as_quat()
         #        smoothed_orientation2[i,:] = [new_quat[3], new_quat[0], new_quat[1], new_quat[2]]
-
-        return (self.time_list, smoothed_orientation2)
+        self.smoothed_orientation = smoothed_orientation2
+        return (self.time_list, self.smoothed_orientation)
 
 
     def get_stabilize_transform(self, smooth=0.94, refresh=False):
@@ -179,16 +179,25 @@ class GyroIntegrator:
             self.stab_rotations = stab_rotations
         return (self.time_list, self.stab_rotations)
 
-    def get_interpolated_stab_quaternion(self, frameTime=0):
-        time_list, smoothed_orientation = (self.time_list, self.stab_rotations) #self.get_stabilize_transform(smooth)
-        if frameTime <= time_list[0]:
-            return smoothed_orientation[0]
-        elif frameTime >= time_list[-1]:
-            return smoothed_orientation[-1]
-        else:
-            i = np.searchsorted(time_list, frameTime) - 1
-            weight = (frameTime - time_list[i])/(time_list[i+1]-time_list[i])
-            return quat.slerp(smoothed_orientation[i],smoothed_orientation[i+1],[weight])
+    def get_interpolated_stab_quaternion_rolling_shutter(self, lineTimes=None, refTime=None):
+        #print(lineTimes.shape)
+        refIdx = np.searchsorted(self.time_list, refTime) - 1
+        #print(refIdx)
+        #print(self.smoothed_orientation[refIdx])
+        #print(self.smoothed_orientation[refIdx+1])
+        refWeight = (refTime - self.time_list[refIdx])/(self.time_list[refIdx+1]-self.time_list[refIdx])
+        refSmoothOrientation = quat.slerp(self.smoothed_orientation[refIdx], self.smoothed_orientation[refIdx+1],[refWeight])[0]
+        #print(refSmoothOrientation)
+
+        idxs = np.searchsorted(self.time_list, lineTimes) - 1
+        #print(idxs.shape)
+        weights = (lineTimes - self.time_list[idxs])/(self.time_list[idxs+1]-self.time_list[idxs])
+        #print(weights.shape)
+        interPorientations =  \
+                [quat.slerp(o1, o2, [w])[0] for o1, o2, w in zip(self.orientation_list[idxs], self.orientation_list[idxs+1], weights)]
+        #print(len(interPorientations))
+        #print(interPorientations[0])
+        return [quat.rot_between(refSmoothOrientation, interPquat) for interPquat in interPorientations]
 
 
     def get_interpolated_stab_transform(self,smooth, start=0, frameTimeStamps=None):
