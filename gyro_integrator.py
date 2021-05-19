@@ -8,6 +8,8 @@ This module uses gyroscope data to compute quaternion orientations over time
 import numpy as np
 import quaternion as quat
 
+from scipy.spatial.transform import Rotation
+
 class GyroIntegrator:
     def __init__(self, input_data, time_scaling=1, gyro_scaling=1, zero_out_time=True, initial_orientation=None, acc_data=None):
         """Initialize instance of gyroIntegrator for getting orientation from gyro data
@@ -174,6 +176,17 @@ class GyroIntegrator:
             stab_rotations[i,:] = quat.rot_between(smoothed_orientation[i],self.orientation_list[i])
 
         return (self.time_list, stab_rotations)
+
+
+    def getCumulativeRotMats(self, frameTimes):
+        idx = np.searchsorted(self.time_list, frameTimes)
+        weights = (frameTimes - self.time_list[idx])/(self.time_list[idx+1]-self.time_list[idx])
+        qq1 = self.orientation_list[idx]
+        qq2 = self.orientation_list[idx+1]
+        quats = [quat.slerp(q1, q2, [weight])[0] for q1, q2, weight in zip(qq1, qq2, weights) ]
+        rotationInbetween = [quat.rot_between(q1, q2) for q1, q2 in zip(quats[:-1], quats[1:]) ]
+        mats = [Rotation([-q[1],-q[2],q[3],-q[0]]).as_matrix() for q in rotationInbetween]
+        return np.array(mats)
 
 
     def get_interpolated_stab_transform(self,smooth, start=0, frameTimeStamps=None):

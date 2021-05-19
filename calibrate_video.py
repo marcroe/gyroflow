@@ -298,7 +298,7 @@ class FisheyeCalibrator:
         scaled_K[2][2] = 1.0
 
 
-        return cv2.fisheye.undistortPoints(distorted_points, scaled_K, self.D, None, scaled_K)
+        return cv2.fisheye.undistortPoints(distorted_points, scaled_K, self.D, None, None)
 
     def decompose_homography(self, H, new_img_dim = None):
         img_dim = new_img_dim if new_img_dim else self.calib_dimension
@@ -310,7 +310,7 @@ class FisheyeCalibrator:
 
     def recover_pose(self, pts1, pts2, new_img_dim = None):
         """ Find rotation matrices using epipolar geometry
-        
+
         Args:
             pts1 (np.ndarray): Initial points
             pts2 (np.ndarray): Resulting points
@@ -324,11 +324,18 @@ class FisheyeCalibrator:
         scaled_K = self.K * img_dim[0] / self.calib_dimension[0]
         scaled_K[2][2] = 1.0
 
-        E, mask = cv2.findEssentialMat(pts1, pts2, scaled_K, cv2.RANSAC, 0.999, 0.1) # cv2.LMEDS or cv2.RANSAC
+        E, mask = cv2.findEssentialMat(pts1, pts2, np.eye(3), cv2.RANSAC, 0.999, 0.1/img_dim[0]) # cv2.LMEDS or cv2.RANSAC
+
         #retval, R, t, mask = cv2.recoverPose(E, pts1, pts2, scaled_K)
         R1, R2, t = cv2.decomposeEssentialMat(E)
 
-        return R1, R2, t
+        mask = mask.flatten()
+        usedPts1 = np.squeeze(np.asarray([pts1[i] for i in range(len(mask)) if mask[i] == 1]))
+        usedPts2 = np.squeeze(np.asarray([pts2[i] for i in range(len(mask)) if mask[i] == 1]))
+        usedPts1 = np.c_[usedPts1, np.ones((usedPts1.shape[0],1))]
+        usedPts2 = np.c_[usedPts2, np.ones((usedPts2.shape[0],1))]
+
+        return R1, R2, t, usedPts1, usedPts2
 
     def get_rotation_map(self, img, quat):
         """Get maps for doing perspective rotations
@@ -1068,7 +1075,7 @@ if __name__ == "__main__":
     #import glob
     #chessboard_size = (9,6)
     #images = glob.glob('calibrationImg/*.jpg')
-     
+
     CAMERA_DIST_COEFS = [
         0.01945104325838463,
         0.1093842438193295,

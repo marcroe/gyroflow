@@ -111,6 +111,27 @@ class Stabilizer:
 
         self.gyro_data[:,1:4] = signal.sosfiltfilt(sosgyro, self.gyro_data[:,1:4], 0) # Filter along "vertical" time axis
 
+    def calcReprojErrorForSnippet(self, integrator, startTime, timestamps, keypts_src, keypts_dst, gyro_delay, gyro_drift):
+        corrected_times = (timestamps - gyro_delay - startTime)/gyro_drift + startTime
+        transforms = integrator.getCumulativeRotMats(corrected_times)
+        #assert len(keypts_src) == transforms.shape[0] + 1
+        error = 0
+        for transf, kpts, expectedKpts in zip(transforms, keypts_src[1:], keypts_dst[1:]):
+            transformedPts = np.matmul(kpts, transf)
+            transformedPts[:,0] /= transformedPts[:,2]
+            transformedPts[:,1] /= transformedPts[:,2]
+            distances = np.linalg.norm(transformedPts[:,0:2] - expectedKpts[:,0:2], axis=1)
+            error += np.sum(distances)
+        return error
+
+    def calcReprojError(self, parameters, integrator, startTime, frametimes_list, keypoints_list):
+        gyro_delay = float(parameters[0])
+        gyro_drift = float(parameters[1])
+        total_error = 0
+        for frametimes, keypoints in zip(frametimes_list, keypoints_list):
+            total_error += self.calcReprojErrorForSnippet(integrator, startTime, frametimes, keypoints[0], keypoints[1], gyro_delay, gyro_drift)
+        return total_error
+
 
     def auto_sync_stab(self, smooth=0.8, sliceframe1 = 10, sliceframe2 = 1000, slicelength = 50, exactTimestamps = True, debug_plots = True):
         if debug_plots:
@@ -118,9 +139,9 @@ class Stabilizer:
 
         v1 = (sliceframe1 + slicelength/2) / self.fps
         v2 = (sliceframe2 + slicelength/2) / self.fps
-        d1, times1, transforms1 = self.optical_flow_comparison(sliceframe1, slicelength, debug_plots = debug_plots)
+        d1, times1, transforms1, keypts_src1, keypts_dst1 = self.optical_flow_comparison(sliceframe1, slicelength, debug_plots = debug_plots)
         #self.initial_offset = d1
-        d2, times2, transforms2 = self.optical_flow_comparison(sliceframe2, slicelength, debug_plots = debug_plots)
+        d2, times2, transforms2, keypts_src2, keypts_dst2 = self.optical_flow_comparison(sliceframe2, slicelength, debug_plots = debug_plots)
 
         self.times1 = times1
         self.times2 = times2
@@ -138,7 +159,7 @@ class Stabilizer:
         correction_slope = err_slope + 1
         gyro_start = (d1 - err_slope*v1)
 
-        interval = 1/(correction_slope * self.fps)
+        #interval = 1/(correction_slope * self.fps)
 
         g1 = v1 - d1
         g2 = v2 - d2
@@ -149,20 +170,43 @@ class Stabilizer:
 
         print("Gyro correction slope {}".format(slope))
 
+        initial_orientation = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
+        new_gyro_data = np.copy(self.gyro_data)
+        new_gyro_data[:,0] = corrected_times # (new_gyro_data[:,0]+gyro_start) *correction_slope
+        new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
+        new_integrator.integrate_all()
+
+        ## OPTIMIZE further
+        import scipy.optimize
+        parameters = np.asarray([0.0, 1.0])
+        startTime = new_integrator.get_raw_data("t")[0]
+        result = scipy.optimize.minimize(self.calcReprojError, parameters, (new_integrator, startTime,
+                                                                            [times1, times2],
+                                                                            [(keypts_src1, keypts_dst1), (keypts_src2, keypts_dst2)]
+                                                                            ),
+                                                                            'Nelder-Mead', tol=0.000001)
+        print(result)
+        gyro_delay = float(result['x'][0])
+        gyro_drift = float(result['x'][1])
+
+        corrected_times = (corrected_times - startTime)*gyro_drift + startTime + gyro_delay
+
+        print("gyro time delay/shift: {}, gyro time drift: {}".format(gyro_delay, gyro_drift))
+
         xplot = plt.subplot(311)
-        plt.plot(corrected_times, self.integrator.get_raw_data("x"))
+        plt.plot(corrected_times, new_integrator.get_raw_data("x"))
         plt.plot(times1, -transforms1[:,0] * self.fps)
         plt.plot(times2, -transforms2[:,0] * self.fps)
         plt.ylabel("omega x [rad/s]")
 
         plt.subplot(312, sharex=xplot)
-        plt.plot(corrected_times, self.integrator.get_raw_data("y"))
+        plt.plot(corrected_times, new_integrator.get_raw_data("y"))
         plt.plot(times1, -transforms1[:,1] * self.fps)
         plt.plot(times2, -transforms2[:,1] * self.fps)
         plt.ylabel("omega y [rad/s]")
 
         plt.subplot(313, sharex=xplot)
-        plt.plot(corrected_times, self.integrator.get_raw_data("z"))
+        plt.plot(corrected_times, new_integrator.get_raw_data("z"))
         plt.plot(times1, transforms1[:,2] * self.fps)
         plt.plot(times2, transforms2[:,2] * self.fps)
         #plt.plot(self.integrator.get_raw_data("t") + d2, self.integrator.get_raw_data("z"))
@@ -174,14 +218,11 @@ class Stabilizer:
         # Temp new integrator with corrected time scale
 
         initial_orientation = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
-
         new_gyro_data = np.copy(self.gyro_data)
-
-        # Correct time scale
-        new_gyro_data[:,0] = slope * (self.integrator.get_raw_data("t") - g1) + v1 # (new_gyro_data[:,0]+gyro_start) *correction_slope
-
+        new_gyro_data[:,0] = corrected_times # (new_gyro_data[:,0]+gyro_start) *correction_slope
         new_integrator = GyroIntegrator(new_gyro_data,zero_out_time=False, initial_orientation=initial_orientation)
         new_integrator.integrate_all()
+
 
         self.frameTimestamps = self.extractFrameTimestamps(exactTimestamps)
         self.last_smooth = smooth
@@ -324,22 +365,18 @@ class Stabilizer:
                 curr_pts = curr_pts[idx]
                 assert prev_pts.shape == curr_pts.shape
 
-                prev_pts_lst.append(prev_pts)
-                curr_pts_lst.append(curr_pts)
-
-
                 # TODO: Try getting undistort + homography working for more accurate rotation estimation
                 src_pts = self.undistort.undistort_points(prev_pts, new_img_dim=(self.width,self.height))
                 dst_pts = self.undistort.undistort_points(curr_pts, new_img_dim=(self.width,self.height))
 
-                filtered_src = []
-                filtered_dst = []
+                filtered_src = src_pts #[]
+                filtered_dst = dst_pts #[]
 
-                for i in range(src_pts.shape[0]):
-                    # if both points are within frame
-                    if (0 < src_pts[i,0,0] < self.width) and (0 < dst_pts[i,0,0] < self.width) and (0 < src_pts[i,0,1] < self.height) and (0 < dst_pts[i,0,1] < self.height):
-                        filtered_src.append(src_pts[i,:])
-                        filtered_dst.append(dst_pts[i,:])
+                #for i in range(src_pts.shape[0]):
+                #    # if both points are within frame
+                #    if (0 < src_pts[i,0,0] < self.width) and (0 < dst_pts[i,0,0] < self.width) and (0 < src_pts[i,0,1] < self.height) and (0 < dst_pts[i,0,1] < self.height):
+                #        filtered_src.append(src_pts[i,:])
+                #        filtered_dst.append(dst_pts[i,:])
 
                 # rots contains for solutions for the rotation. Get one with smallest magnitude.
                 # https://docs.opencv.org/master/da/de9/tutorial_py_epipolar_geometry.html
@@ -350,7 +387,7 @@ class Stabilizer:
                 self.use_essential_matrix = True
 
                 if self.use_essential_matrix:
-                    R1, R2, t = self.undistort.recover_pose(np.array(filtered_src), np.array(filtered_dst), new_img_dim=(self.width,self.height))
+                    R1, R2, t, used_src, used_dst = self.undistort.recover_pose(np.array(filtered_src), np.array(filtered_dst), new_img_dim=(self.width,self.height))
 
                     rot1 = Rotation.from_matrix(R1)
                     rot2 = Rotation.from_matrix(R2)
@@ -360,6 +397,8 @@ class Stabilizer:
                     else:
                         roteul = rot2.as_euler("xyz")
 
+                    prev_pts_lst.append(used_src)
+                    curr_pts_lst.append(used_dst)
 
                 #m, inliers = cv2.estimateAffine2D(src_pts, dst_pts)
                 #dx = m[0,2]
@@ -369,15 +408,21 @@ class Stabilizer:
                 #transforms.append([dx,dy,da])
                 transforms.append(list(roteul))
 
-
                 prev_gray = curr_gray
 
             else:
                 print("Frame {}".format(i))
 
         transforms = np.array(transforms)
+        frame_times = np.array(frame_times)
+
+        #prev_pts_lst = np.concatenate(prev_pts_lst)
+        #curr_pts_lst = np.concatenate(curr_pts_lst)
+
+        #print(prev_pts_lst)
+
         estimated_offset = self.estimate_gyro_offset(frame_times, transforms, prev_pts_lst, curr_pts_lst, debug_plots = debug_plots)
-        return estimated_offset, frame_times, transforms
+        return estimated_offset, frame_times, transforms, prev_pts_lst, curr_pts_lst
 
 
     def estimate_gyro_offset(self, OF_times, OF_transforms, prev_pts_list, curr_pts_list, debug_plots = True):
@@ -1278,7 +1323,7 @@ class BBLStabilizer(Stabilizer):
         # Other attributes
         initial_orientation = Rotation.from_euler('xyz', [0, 0, 0], degrees=True).as_quat()
 
-        self.gyro_data = impute_gyro_data(self.gyro_data)
+        #self.gyro_data = impute_gyro_data(self.gyro_data)
 
         self.integrator = GyroIntegrator(self.gyro_data,initial_orientation=initial_orientation)
         self.integrator.integrate_all()
